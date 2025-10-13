@@ -1,0 +1,25 @@
+name: Morning Summary
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # Každý den v 5:00 ráno (UTC)
+  workflow_dispatch:       # Možnost spustit ručně
+
+jobs:
+  morning-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run morning summary
+        run: python morning_summary.py
