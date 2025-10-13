@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
 # 🔗 Tvůj Discord webhook (vložit sem!)
-DISCORD_WEBHOOK = "TVŮJ_DISCORD_WEBHOOK_URL"
+DISCORD_WEBHOOK = https://discordapp.com/api/webhooks/1427170379734057022/vV6SwUHRXhBfIGhQ6E9uGjqGpm-Q9jBrObebkq1PTbnKoYo9zNg6r_W9KlOsMwe3234_
 
 # 🌍 Forex Factory kalendář
 URL = "https://www.forexfactory.com/calendar?day=today"
