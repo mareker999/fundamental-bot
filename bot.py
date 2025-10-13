@@ -1,90 +1,98 @@
 import requests
 from bs4 import BeautifulSoup
-import datetime
+from datetime import datetime
 import os
 
-# Discord webhook z GitHub Secrets
-DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL")
+# 🔗 Tvůj Discord webhook (vložit sem!)
+DISCORD_WEBHOOK = "TVŮJ_DISCORD_WEBHOOK_URL"
 
-# URL Forex Factory
-FOREX_FACTORY_URL = "https://www.forexfactory.com/"
+# 🌍 Forex Factory kalendář
+URL = "https://www.forexfactory.com/calendar?day=today"
 
-# Načtení HTML obsahu
-response = requests.get(FOREX_FACTORY_URL)
-soup = BeautifulSoup(response.text, "html.parser")
+def get_fundamental_news():
+    """Načte červené (high impact) zprávy z Forex Factory"""
+    response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"})
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    news_data = []
+    rows = soup.select("tr.calendar__row.calendar_row")
+    
+    for row in rows:
+        impact = row.select_one(".calendar__impact-icon.calendar__impact-icon--high")
+        if impact:
+            time = row.select_one(".calendar__time")
+            currency = row.select_one(".calendar__currency")
+            event = row.select_one(".calendar__event-title")
+            actual = row.select_one(".calendar__actual")
+            forecast = row.select_one(".calendar__forecast")
+            previous = row.select_one(".calendar__previous")
+            
+            if all([time, currency, event]):
+                news_data.append({
+                    "time": time.text.strip(),
+                    "currency": currency.text.strip(),
+                    "event": event.text.strip(),
+                    "actual": actual.text.strip() if actual else "—",
+                    "forecast": forecast.text.strip() if forecast else "—",
+                    "previous": previous.text.strip() if previous else "—",
+                })
+    return news_data
 
-# Vyhledání všech událostí
-events = soup.find_all("tr", class_="calendar__row")
+def analyze_impact(actual, forecast, event_name):
+    """Určí, zda je výsledek pozitivní nebo negativní pro měnu"""
+    if actual == "—" or forecast == "—":
+        return "⏳ Čeká se na výsledek."
+    
+    try:
+        actual_val = float(actual.replace("%", "").replace(",", ""))
+        forecast_val = float(forecast.replace("%", "").replace(",", ""))
+    except ValueError:
+        return "📊 Nelze vyhodnotit (nečíselná data)."
 
-important_events = []
-today = datetime.date.today().strftime("%b %d")  # např. Oct 12
+    # Základní logika podle typu události
+    if any(x in event_name.lower() for x in ["unemployment", "jobless", "claims"]):
+        return "📉 Negativní pro měnu" if actual_val > forecast_val else "📈 Pozitivní pro měnu"
+    elif any(x in event_name.lower() for x in ["cpi", "inflation", "ppi", "price"]):
+        return "📈 Pozitivní pro měnu" if actual_val > forecast_val else "📉 Negativní pro měnu"
+    elif any(x in event_name.lower() for x in ["gdp", "sales", "employment", "payrolls", "pmi"]):
+        return "📈 Pozitivní pro měnu" if actual_val > forecast_val else "📉 Negativní pro měnu"
+    else:
+        # Neutrální default
+        if actual_val > forecast_val:
+            return "📈 Pozitivní pro měnu"
+        elif actual_val < forecast_val:
+            return "📉 Negativní pro měnu"
+        else:
+            return "⚪ Neutrální výsledek"
 
-for event in events:
-    impact = event.find("span", class_="impact")
-    if impact and "high" in impact.get("class", []):  # pouze červené (High Impact)
-        time_el = event.find("td", class_="calendar__time")
-        title_el = event.find("td", class_="calendar__event")
-        currency_el = event.find("td", class_="calendar__currency")
-        actual_el = event.find("td", class_="calendar__actual")
-        forecast_el = event.find("td", class_="calendar__forecast")
-        previous_el = event.find("td", class_="calendar__previous")
+def create_message(news_data):
+    """Vytvoří zprávu pro Discord"""
+    if not news_data:
+        return {
+            "content": f"📅 **{datetime.now().strftime('%b %d')}** – Žádné nové červené fundamentální zprávy dnes."
+        }
 
-        if not title_el or not currency_el:
-            continue
+    message_lines = [f"📊 **Fundamentální analýza – {datetime.now().strftime('%b %d')}**\n"]
 
-        title = title_el.get_text(strip=True)
-        currency = currency_el.get_text(strip=True)
-        actual = actual_el.get_text(strip=True) if actual_el else "-"
-        forecast = forecast_el.get_text(strip=True) if forecast_el else "-"
-        previous = previous_el.get_text(strip=True) if previous_el else "-"
-        time = time_el.get_text(strip=True) if time_el else "All day"
+    for item in news_data:
+        analysis = analyze_impact(item["actual"], item["forecast"], item["event"])
+        message_lines.append(
+            f"🇨🇭 **{item['currency']} – {item['event']}**\n"
+            f"🕒 {item['time']}\n"
+            f"📊 Actual: {item['actual']} | Forecast: {item['forecast']} | Previous: {item['previous']}\n"
+            f"💬 {analysis}\n"
+        )
 
-        # Základní analýza dopadu
-        def interpret(actual, forecast):
-            try:
-                actual_val = float(actual.replace("%", "").replace(",", ""))
-                forecast_val = float(forecast.replace("%", "").replace(",", ""))
-                if actual_val > forecast_val:
-                    return f"📈 Lepší než očekávání → Posiluje {currency}"
-                elif actual_val < forecast_val:
-                    return f"📉 Horší než očekávání → Oslabuje {currency}"
-                else:
-                    return f"⚖️ Shodné s očekáváním → Neutrální vliv"
-            except:
-                return "❓ Nedostatek dat pro přesnou analýzu"
+    return {"content": "\n".join(message_lines)}
 
-        analysis = interpret(actual, forecast)
-
-        important_events.append({
-            "time": time,
-            "currency": currency,
-            "title": title,
-            "actual": actual,
-            "forecast": forecast,
-            "previous": previous,
-            "analysis": analysis
-        })
-
-# Pokud nejsou žádné nové důležité zprávy
-if not important_events:
-    message = {
-        "content": f"🕒 {today} – Žádné nové červené fundamentální zprávy dnes."
-    }
+def send_to_discord(message):
+    """Odešle výsledek na Discord"""
+    if not DISCORD_WEBHOOK or not DISCORD_WEBHOOK.startswith("https://"):
+        raise ValueError("❌ Discord webhook URL není správně nastaven.")
     requests.post(DISCORD_WEBHOOK, json=message)
-    exit()
 
-# Formátování zprávy pro Discord
-message_lines = [f"📊 **Fundamentální analýza – {today}**\n"]
-for e in important_events:
-    msg = (
-        f"**{e['currency']} | {e['title']}** ({e['time']})\n"
-        f"📍 Actual: {e['actual']} | Forecast: {e['forecast']} | Previous: {e['previous']}\n"
-        f"🧠 {e['analysis']}\n"
-    )
-    message_lines.append(msg)
-
-final_message = "\n".join(message_lines)
-
-# Odeslání na Discord
-requests.post(DISCORD_WEBHOOK, json={"content": final_message})
-S
+if __name__ == "__main__":
+    news_data = get_fundamental_news()
+    message = create_message(news_data)
+    send_to_discord(message)
+    print("✅ Zpráva odeslána na Discord.")
