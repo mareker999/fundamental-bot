@@ -19,11 +19,13 @@ def get_high_impact_events():
     today = datetime.utcnow().strftime("%Y-%m-%d")
     tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    url = f"https://www.econdb.com/api/calendar/?from={today}&to={tomorrow}"
-    print(f"📡 Stahuji data z: {url}")
+    url = "https://www.econdb.com/api/calendar/"
+    print(f"📡 Stahuji data z: {url} ({today} – {tomorrow})")
+
+    payload = {"from": today, "to": tomorrow}
 
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -70,5 +72,6 @@ def send_to_discord(events):
 if __name__ == "__main__":
     events = get_high_impact_events()
     send_to_discord(events)
+
 
 
