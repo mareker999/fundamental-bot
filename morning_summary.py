@@ -1,12 +1,9 @@
 import requests
-from bs4 import BeautifulSoup
 from datetime import datetime
 
 DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1427170379734057022/vV6SwUHRXhBfIGhQ6E9uGjqGpm-Q9jBrObebkq1PTbnKoYo9zNg6r_W9KlOsMwe3234_"
-URL = "https://www.forexfactory.com/calendar?day=today"
-
-# Mapování měn na emoji vlajky
-CURRENCY_FLAGS = {
+# Mapa měn na vlajky
+FLAGS = {
     "USD": "🇺🇸",
     "EUR": "🇪🇺",
     "GBP": "🇬🇧",
@@ -18,48 +15,52 @@ CURRENCY_FLAGS = {
     "CNY": "🇨🇳"
 }
 
-def get_todays_high_impact_events():
-    response = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(response.text, "html.parser")
+def get_high_impact_events():
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    url = f"https://cdn-nfs.fxfactory.com/ffcal/week-{today}.json"
+    r = requests.get(url)
+    if r.status_code != 200:
+        print("❌ Chyba při načítání dat z ForexFactory.")
+        return []
 
+    data = r.json()
     events = []
-    rows = soup.select("tr.calendar__row.calendar_row")
-    for row in rows:
-        impact = row.select_one(".calendar__impact-icon.calendar__impact-icon--high")
-        if impact:
-            time = row.select_one(".calendar__time")
-            currency = row.select_one(".calendar__currency")
-            event = row.select_one(".calendar__event-title")
-            if all([time, currency, event]):
-                events.append({
-                    "time": time.text.strip(),
-                    "currency": currency.text.strip(),
-                    "event": event.text.strip(),
-                })
+
+    for event in data.get("events", []):
+        if event.get("impact") == "High":  # Pouze červené zprávy
+            date_str = event.get("date")
+            time_str = event.get("time", "")
+            currency = event.get("currency", "")
+            title = event.get("title", "")
+
+            events.append({
+                "time": f"{date_str} {time_str}",
+                "currency": currency,
+                "title": title
+            })
     return events
 
 def send_to_discord(events):
     today = datetime.now().strftime("%d.%m.%Y")
-
     if not events:
-        message = {
+        msg = {
             "content": f"📅 **{today}** – Dnes nejsou žádné červené fundamentální zprávy."
         }
     else:
         text = f"🌅 **Ranní fundamentální přehled – {today}**\n\n"
         for e in events:
-            flag = CURRENCY_FLAGS.get(e["currency"], "💱")
-            text += f"🕒 {e['time']} | {flag} **{e['currency']}** – {e['event']}\n"
+            flag = FLAGS.get(e["currency"], "💱")
+            text += f"🕒 {e['time']} | {flag} **{e['currency']}** – {e['title']}\n"
         text += "\n📊 **Poznámka:** Sleduj měny s vysokým dopadem – možné zvýšení volatility."
-        message = {"content": text}
+        msg = {"content": text}
 
-    response = requests.post(DISCORD_WEBHOOK, json=message)
+    response = requests.post(DISCORD_WEBHOOK, json=msg)
     if response.status_code == 204:
-        print("✅ Ranní přehled odeslán na Discord.")
+        print("✅ Ranní přehled odeslán.")
     else:
-        print(f"⚠️ Chyba při odesílání na Discord: {response.status_code}")
+        print(f"⚠️ Chyba při odesílání: {response.status_code}")
 
 if __name__ == "__main__":
-    events = get_todays_high_impact_events()
+    events = get_high_impact_events()
     send_to_discord(events)
 
