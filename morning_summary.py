@@ -1,8 +1,9 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 
 DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1427170379734057022/vV6SwUHRXhBfIGhQ6E9uGjqGpm-Q9jBrObebkq1PTbnKoYo9zNg6r_W9KlOsMwe3234_"
-# Mapa měn na vlajky
+
 FLAGS = {
     "USD": "🇺🇸",
     "EUR": "🇪🇺",
@@ -15,33 +16,47 @@ FLAGS = {
     "CNY": "🇨🇳"
 }
 
+def get_current_week_url():
+    """Vypočítá pondělí aktuálního týdne a vytvoří URL feedu."""
+    today = datetime.utcnow()
+    monday = today - timedelta(days=today.weekday())
+    week_str = monday.strftime("%Y-%m-%d")
+    return f"https://cdn-nfs.fxfactory.com/ffcal/week-{week_str}.json"
+
 def get_high_impact_events():
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    url = f"https://cdn-nfs.fxfactory.com/ffcal/week-{today}.json"
-    r = requests.get(url)
-    if r.status_code != 200:
-        print("❌ Chyba při načítání dat z ForexFactory.")
+    url = get_current_week_url()
+    print(f"📡 Stahuji data z: {url}")
+
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"❌ Chyba při načítání dat: {e}")
         return []
 
-    data = r.json()
+    try:
+        data = r.json()
+    except json.JSONDecodeError:
+        print("❌ Chyba: odpověď není validní JSON.")
+        return []
+
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
     events = []
 
     for event in data.get("events", []):
-        if event.get("impact") == "High":  # Pouze červené zprávy
-            date_str = event.get("date")
-            time_str = event.get("time", "")
-            currency = event.get("currency", "")
-            title = event.get("title", "")
-
+        if event.get("impact") == "High" and event.get("date") == today_str:
             events.append({
-                "time": f"{date_str} {time_str}",
-                "currency": currency,
-                "title": title
+                "time": event.get("time", "").strip(),
+                "currency": event.get("currency", "").strip(),
+                "title": event.get("title", "").strip()
             })
+
+    print(f"🔎 Nalezeno {len(events)} červených zpráv pro dnešek.")
     return events
 
 def send_to_discord(events):
     today = datetime.now().strftime("%d.%m.%Y")
+
     if not events:
         msg = {
             "content": f"📅 **{today}** – Dnes nejsou žádné červené fundamentální zprávy."
@@ -50,15 +65,19 @@ def send_to_discord(events):
         text = f"🌅 **Ranní fundamentální přehled – {today}**\n\n"
         for e in events:
             flag = FLAGS.get(e["currency"], "💱")
-            text += f"🕒 {e['time']} | {flag} **{e['currency']}** – {e['title']}\n"
+            time_display = e["time"] if e["time"] else "??:??"
+            text += f"🕒 {time_display} | {flag} **{e['currency']}** – {e['title']}\n"
         text += "\n📊 **Poznámka:** Sleduj měny s vysokým dopadem – možné zvýšení volatility."
         msg = {"content": text}
 
-    response = requests.post(DISCORD_WEBHOOK, json=msg)
-    if response.status_code == 204:
-        print("✅ Ranní přehled odeslán.")
-    else:
-        print(f"⚠️ Chyba při odesílání: {response.status_code}")
+    try:
+        response = requests.post(DISCORD_WEBHOOK, json=msg, timeout=10)
+        if response.status_code in [200, 204]:
+            print("✅ Zpráva úspěšně odeslána na Discord.")
+        else:
+            print(f"⚠️ Discord vrátil kód: {response.status_code}")
+    except Exception as e:
+        print(f"❌ Chyba při odesílání na Discord: {e}")
 
 if __name__ == "__main__":
     events = get_high_impact_events()
