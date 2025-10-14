@@ -4,22 +4,22 @@ from datetime import datetime, timedelta
 DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1427170379734057022/vV6SwUHRXhBfIGhQ6E9uGjqGpm-Q9jBrObebkq1PTbnKoYo9zNg6r_W9KlOsMwe3234_"
 
 FLAGS = {
-    "USD": "🇺🇸",
-    "EUR": "🇪🇺",
-    "GBP": "🇬🇧",
-    "JPY": "🇯🇵",
-    "CHF": "🇨🇭",
-    "CAD": "🇨🇦",
-    "AUD": "🇦🇺",
-    "NZD": "🇳🇿",
-    "CNY": "🇨🇳"
+    "United States": "🇺🇸 USD",
+    "Euro Area": "🇪🇺 EUR",
+    "United Kingdom": "🇬🇧 GBP",
+    "Japan": "🇯🇵 JPY",
+    "Switzerland": "🇨🇭 CHF",
+    "Canada": "🇨🇦 CAD",
+    "Australia": "🇦🇺 AUD",
+    "New Zealand": "🇳🇿 NZD",
+    "China": "🇨🇳 CNY"
 }
 
 def get_high_impact_events():
     today = datetime.utcnow().strftime("%Y-%m-%d")
     tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    url = f"https://economic-calendar-api.vercel.app/api/calendar?from={today}&to={tomorrow}"
+    url = f"https://www.econdb.com/api/calendar/?from={today}&to={tomorrow}"
     print(f"📡 Stahuji data z: {url}")
 
     try:
@@ -31,14 +31,14 @@ def get_high_impact_events():
         return []
 
     events = []
-    for item in data.get("data", []):
+    for item in data.get("results", []):
         if item.get("impact") == "High":
-            time_utc = item.get("time", "??:??")
-            currency = item.get("currency", "???")
-            title = item.get("event", "Neznámý event")
+            date = item.get("date", "??:??")
+            country = item.get("country", "Unknown")
+            title = item.get("title", "Neznámý event")
             events.append({
-                "time": time_utc,
-                "currency": currency,
+                "time": date,
+                "country": country,
                 "title": title
             })
 
@@ -53,8 +53,8 @@ def send_to_discord(events):
     else:
         text = f"🌅 **Ranní fundamentální přehled – {today}**\n\n"
         for e in events:
-            flag = FLAGS.get(e["currency"], "💱")
-            text += f"🕒 {e['time']} | {flag} **{e['currency']}** – {e['title']}\n"
+            flag = FLAGS.get(e["country"], "💱")
+            text += f"🕒 {e['time']} | {flag} – **{e['title']}**\n"
         text += "\n📊 **Poznámka:** Sleduj měny s vysokým dopadem – možné zvýšení volatility."
         msg = {"content": text}
 
