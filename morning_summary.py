@@ -1,6 +1,6 @@
 import requests
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
+import re
 
 DISCORD_WEBHOOK = "https://discordapp.com/api/webhooks/1427170379734057022/vV6SwUHRXhBfIGhQ6E9uGjqGpm-Q9jBrObebkq1PTbnKoYo9zNg6r_W9KlOsMwe3234_"
 
@@ -16,17 +16,10 @@ FLAGS = {
     "CNY": "🇨🇳"
 }
 
-def get_current_week_url():
-    """Vypočítá pondělí aktuálního týdne a vytvoří URL feedu."""
-    today = datetime.utcnow()
-    monday = today - timedelta(days=today.weekday())
-    week_str = monday.strftime("%Y-%m-%d")
-    return f"https://cdn-nfs.fxfactory.com/ffcal/week-{week_str}.json"
-
 def get_high_impact_events():
-    url = get_current_week_url()
+    url = "https://cdn-nfs.forexfactory.net/ffcal_week_this.ics"
     print(f"📡 Stahuji data z: {url}")
-
+    
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -34,22 +27,27 @@ def get_high_impact_events():
         print(f"❌ Chyba při načítání dat: {e}")
         return []
 
-    try:
-        data = r.json()
-    except json.JSONDecodeError:
-        print("❌ Chyba: odpověď není validní JSON.")
-        return []
-
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    data = r.text
+    today = datetime.utcnow().strftime("%Y%m%d")
     events = []
 
-    for event in data.get("events", []):
-        if event.get("impact") == "High" and event.get("date") == today_str:
-            events.append({
-                "time": event.get("time", "").strip(),
-                "currency": event.get("currency", "").strip(),
-                "title": event.get("title", "").strip()
-            })
+    matches = re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", data, re.S)
+    for match in matches:
+        if "Impact: High" in match:
+            date_match = re.search(r"DTSTART:(\d+)", match)
+            title_match = re.search(r"SUMMARY:(.+)", match)
+            currency_match = re.search(r"Currency: ([A-Z]{3})", match)
+
+            if date_match and title_match and currency_match:
+                date_str = date_match.group(1)
+                event_date = date_str[:8]
+                if event_date == today:
+                    time_utc = f"{date_str[9:11]}:{date_str[11:13]}"
+                    events.append({
+                        "time": time_utc,
+                        "currency": currency_match.group(1),
+                        "title": title_match.group(1)
+                    })
 
     print(f"🔎 Nalezeno {len(events)} červených zpráv pro dnešek.")
     return events
@@ -58,15 +56,12 @@ def send_to_discord(events):
     today = datetime.now().strftime("%d.%m.%Y")
 
     if not events:
-        msg = {
-            "content": f"📅 **{today}** – Dnes nejsou žádné červené fundamentální zprávy."
-        }
+        msg = {"content": f"📅 **{today}** – Dnes nejsou žádné červené fundamentální zprávy."}
     else:
         text = f"🌅 **Ranní fundamentální přehled – {today}**\n\n"
         for e in events:
             flag = FLAGS.get(e["currency"], "💱")
-            time_display = e["time"] if e["time"] else "??:??"
-            text += f"🕒 {time_display} | {flag} **{e['currency']}** – {e['title']}\n"
+            text += f"🕒 {e['time']} | {flag} **{e['currency']}** – {e['title']}\n"
         text += "\n📊 **Poznámka:** Sleduj měny s vysokým dopadem – možné zvýšení volatility."
         msg = {"content": text}
 
