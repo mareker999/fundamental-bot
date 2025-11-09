@@ -19,13 +19,12 @@ def get_high_impact_events():
     today = datetime.utcnow().strftime("%Y-%m-%d")
     tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    url = "https://www.econdb.com/api/calendar/"
-    print(f"📡 Stahuji data z: {url} ({today} – {tomorrow})")
+    url = f"https://api.tradingeconomics.com/calendar?d1={today}&d2={tomorrow}&importance=3"
 
-    payload = {"from": today, "to": tomorrow}
+    print(f"📡 Stahuji data z: {url}")
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.get(url, timeout=15)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -33,19 +32,27 @@ def get_high_impact_events():
         return []
 
     events = []
-    for item in data.get("results", []):
-        if item.get("impact") == "High":
-            date = item.get("date", "??:??")
-            country = item.get("country", "Unknown")
-            title = item.get("title", "Neznámý event")
-            events.append({
-                "time": date,
-                "country": country,
-                "title": title
-            })
+    for item in data:
+        country = item.get("Country", "Unknown")
+        title = item.get("Event", "Neznámý event")
+        time_utc = item.get("Date", "")  # UTC čas
+        time_local = convert_to_czech_time(time_utc)
+        events.append({
+            "time": time_local,
+            "country": country,
+            "title": title
+        })
 
     print(f"🔎 Nalezeno {len(events)} červených zpráv pro dnešek.")
     return events
+
+def convert_to_czech_time(utc_time):
+    try:
+        dt = datetime.strptime(utc_time, "%Y-%m-%dT%H:%M:%S")
+        dt_czech = dt + timedelta(hours=2)
+        return dt_czech.strftime("%H:%M")
+    except:
+        return "??:??"
 
 def send_to_discord(events):
     today = datetime.now().strftime("%d.%m.%Y")
@@ -72,6 +79,7 @@ def send_to_discord(events):
 if __name__ == "__main__":
     events = get_high_impact_events()
     send_to_discord(events)
+
 
 
 
